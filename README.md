@@ -33,11 +33,12 @@ data/materias/8ano-matematica/
 
 ## Como rodar
 
-Requer Node.js 18 ou superior. Não há dependências para instalar.
+Requer Node.js 18 ou superior.
 
 ```bash
 cd estudos-dashboard
-ANTHROPIC_API_KEY=sua_chave node server.js
+npm install
+ANTHROPIC_API_KEY=sua_chave DATABASE_URL=postgres://usuario:senha@host:5432/banco node server.js
 ```
 
 Abra http://localhost:3000 no navegador.
@@ -50,6 +51,8 @@ Variáveis opcionais:
 | `CLAUDE_MODEL` | `claude-haiku-5-5` | Modelo usado. Para respostas mais elaboradas, use `claude-sonnet-5-5` |
 | `PORT` | `3000` | Porta do servidor |
 | `DATA_DIR` | `./data` | Onde ficam as pastas das matérias |
+| `DATABASE_URL` | (vazio) | Conexão Postgres. Quando definida, cada gravação é copiada para o banco |
+| `DATABASE_SSL` | (vazio) | Use `true` se o banco exigir SSL (como o Supabase) |
 
 ## Observações
 
@@ -57,4 +60,5 @@ Variáveis opcionais:
   sirva por HTTPS (por exemplo, com um túnel) ou use "Enviar fotos" e o ditado no Chrome.
 - **Voz** funciona no Chrome e no Edge (reconhecimento de voz do navegador).
 - O servidor não tem login: rode-o só na sua máquina ou em rede confiável.
+- **Banco:** os arquivos em `data/` são a cópia principal. Com `DATABASE_URL`, cada gravação também vai para o Postgres (tabelas `materias`, `resumos`, `provas`, `mapas`, `perguntas`, `duvidas`). Ao iniciar, todas as matérias são sincronizadas. Se a gravação no banco falhar, a tela mostra o erro.
 - Para fazer backup, copie a pasta `data/`.

@@ -4,12 +4,14 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const db = require('./db');
 
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const MATERIAS_DIR = path.join(DATA_DIR, 'materias');
 const PORT = Number(process.env.PORT) || 3000;
 const API_KEY = process.env.ANTHROPIC_API_KEY || '';
+const DATABASE_URL = process.env.DATABASE_URL || '';
 const MODEL = process.env.CLAUDE_MODEL || 'claude-haiku-5-5';
 const MAX_BODY = 30 * 1024 * 1024;
 
@@ -336,6 +338,7 @@ function detalheMateria(slug) {
 // ---------- HTTP ----------
 const ROTAS = [
   ['GET', /^\/api\/series$/, () => SERIES],
+  ['GET', /^\/api\/status$/, () => ({ banco: db.ativo() })],
   ['GET', /^\/api\/materias$/, () => listarMaterias()],
   ['POST', /^\/api\/materias$/, (_p, b) => criarMateria(b)],
   ['GET', /^\/api\/materias\/([^/]+)$/, ([s]) => detalheMateria(s)],
@@ -382,6 +385,17 @@ async function api(req, res, p) {
     if (metodo !== req.method) continue;
     const corpo = req.method === 'GET' ? undefined : await lerCorpo(req);
     const resultado = await fn(m.slice(1), corpo);
+    if (req.method !== 'GET' && db.ativo()) {
+      // A gravação em arquivo já foi feita; agora copia a matéria para o Postgres.
+      const slug = p.match(/^\/api\/materias\/([^/]+)/)?.[1] || resultado?.slug;
+      if (slug) {
+        try { await db.sincronizar(detalheMateria(slug)); }
+        catch (e) {
+          console.error('Falha ao gravar no banco:', e.message);
+          throw new HttpError(500, 'Salvo no arquivo, mas falhou ao gravar no banco: ' + e.message);
+        }
+      }
+    }
     return enviarJSON(res, 200, resultado ?? { ok: true });
   }
   if (caminhoExiste) return enviarJSON(res, 405, { erro: 'Método não permitido' });
@@ -410,8 +424,22 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, () => {
-  console.log(`Painel de Estudos em http://localhost:${PORT}`);
-  console.log(`Dados em: ${DATA_DIR}`);
-  if (!API_KEY) console.log('Aviso: ANTHROPIC_API_KEY não definida — o Claude (mapas, perguntas, dúvidas, leitura de prova) ficará indisponível.');
+async function iniciarServidor() {
+  if (DATABASE_URL) {
+    await db.iniciar(DATABASE_URL, { ssl: process.env.DATABASE_SSL === 'true' });
+    let n = 0;
+    for (const m of listarMaterias()) { await db.sincronizar(detalheMateria(m.slug)); n++; }
+    console.log(`Banco Postgres conectado. ${n} matéria(s) sincronizada(s).`);
+  } else {
+    console.log('DATABASE_URL não definida: os dados ficam só nos arquivos em data/.');
+  }
+  server.listen(PORT, () => {
+    console.log(`Painel de Estudos em http://localhost:${PORT}`);
+    console.log(`Dados em: ${DATA_DIR}`);
+    if (!API_KEY) console.log('Aviso: ANTHROPIC_API_KEY não definida — o Claude (mapas, perguntas, dúvidas, leitura de prova) ficará indisponível.');
+  });
+}
+iniciarServidor().catch((e) => {
+  console.error('Não foi possível iniciar:', e.message);
+  process.exit(1);
 });
