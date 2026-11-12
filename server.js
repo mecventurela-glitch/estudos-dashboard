@@ -482,6 +482,16 @@ async function rotasDeConta(req, res, p) {
     enviarJSON(res, 200, { ok: true });
     return true;
   }
+  // Criar acesso para outra pessoa: só quem já entrou pode fazer isso
+  if (p === '/api/usuarios' && req.method === 'POST') {
+    if (!emailLogado(req)) throw new HttpError(401, 'Entre com seu email e senha');
+    const corpo = await lerCorpo(req);
+    let criado;
+    try { criado = await usuarios.criar(corpo.email, corpo.senha); }
+    catch (e) { throw new HttpError(400, e.message); }
+    enviarJSON(res, 201, { ok: true, email: criado });
+    return true;
+  }
   if (p === '/api/eu' && req.method === 'GET') {
     const email = emailLogado(req);
     if (!email) throw new HttpError(401, 'Entre com seu email e senha');

@@ -27,8 +27,40 @@ async function api(method, url, body) {
 }
 
 // ---------- acesso (email + senha) ----------
+function viewAcesso() {
+  app.innerHTML = `
+  <section class="card login">
+    <h2>Criar acesso</h2>
+    <p class="muted">Crie a conta de quem vai usar o painel. Todas as contas veem os mesmos dados.</p>
+    <form id="fAcesso">
+      <label>Email <input type="email" name="email" autocomplete="off" required></label>
+      <label>Senha inicial (mínimo 8 caracteres) <input type="password" name="senha" autocomplete="new-password" minlength="8" required></label>
+      <button class="btn" type="submit" id="btnAcesso">Criar acesso</button>
+      <p class="erro" id="acessoErro" hidden></p>
+    </form>
+  </section>`;
+  $('#fAcesso').onsubmit = async (e) => {
+    e.preventDefault();
+    const f = new FormData(e.currentTarget);
+    const btn = $('#btnAcesso');
+    btn.disabled = true;
+    try {
+      const r = await api('POST', '/usuarios', { email: f.get('email'), senha: f.get('senha') });
+      toast(`Conta criada: ${r.email}`);
+      e.currentTarget.reset();
+      $('#acessoErro').hidden = true;
+    } catch (err) {
+      $('#acessoErro').textContent = err.message;
+      $('#acessoErro').hidden = false;
+    } finally {
+      btn.disabled = false;
+    }
+  };
+}
+
 function mostrarLogin(erro = '') {
   $('#sair').hidden = true;
+  $('#acessoBtn').hidden = true;
   app.innerHTML = `
   <section class="card login">
     <h2>Entrar</h2>
@@ -124,9 +156,11 @@ async function route() {
   const [, root, slug, tab] = location.hash.replace(/^#/, '').split('/');
   if (!(await sessaoAtiva())) return mostrarLogin();
   $('#sair').hidden = false;
+  $('#acessoBtn').hidden = false;
   try {
     if (!SERIES.length) SERIES = await api('GET', '/series');
-    if (root === 'm' && slug) await viewMateria(slug, tab);
+    if (root === 'acesso') viewAcesso();
+    else if (root === 'm' && slug) await viewMateria(slug, tab);
     else await viewHome();
   } catch (e) {
     app.innerHTML = `<p class="erro">${esc(e.message)}</p>`;

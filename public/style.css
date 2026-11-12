@@ -20,6 +20,7 @@ small, .muted { color: var(--muted); font-weight: 400; }
 .topo { position: sticky; top: 0; z-index: 5; background: var(--card); border-bottom: 1px solid var(--borda); padding: .75rem 16px; }
 .topo { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .logo { font-weight: 700; color: var(--texto); font-size: 1.05rem; }
+.acoes { display: flex; gap: 8px; }
 .login { max-width: 360px; margin: 48px auto; }
 .login form { display: grid; gap: 10px; }
 .login label { display: grid; gap: 4px; font-size: .9rem; color: var(--muted); }
