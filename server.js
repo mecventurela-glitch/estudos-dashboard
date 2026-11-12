@@ -7,7 +7,8 @@ const crypto = require('crypto');
 const db = require('./db');
 
 const PUBLIC_DIR = path.join(__dirname, 'public');
-const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
+// Na Vercel o disco do projeto é somente leitura: usa /tmp (temporário) e o Postgres guarda o definitivo.
+const DATA_DIR = process.env.DATA_DIR || (process.env.VERCEL ? '/tmp/estudos-data' : path.join(__dirname, 'data'));
 const MATERIAS_DIR = path.join(DATA_DIR, 'materias');
 const PORT = Number(process.env.PORT) || 3000;
 const API_KEY = process.env.ANTHROPIC_API_KEY || '';
@@ -30,7 +31,7 @@ const MIME = {
 };
 const SISTEMA_BASE = 'Você é um professor particular para alunos de uma escola adventista brasileira, do 8º ano ao 3º ano do Ensino Médio. Responda sempre em português do Brasil, de forma clara e didática, fiel ao conteúdo fornecido. Quando o tema tocar em religião, respeite a visão cristã adventista.';
 
-fs.mkdirSync(MATERIAS_DIR, { recursive: true });
+try { fs.mkdirSync(MATERIAS_DIR, { recursive: true }); } catch (e) { console.error('Não consegui criar a pasta de dados:', e.message); }
 
 class HttpError extends Error {
   constructor(status, message) { super(message); this.status = status; }
@@ -410,8 +411,26 @@ function servirArquivo(res, file, base) {
   enviar(res, 200, fs.readFileSync(resolvido), MIME[path.extname(resolvido)] || 'application/octet-stream');
 }
 
-const server = http.createServer(async (req, res) => {
+let prontoBanco = null;
+async function iniciarBanco() {
+  if (DATABASE_URL) {
+    await db.iniciar(DATABASE_URL, { ssl: process.env.DATABASE_SSL === 'true' });
+    let n = 0;
+    for (const m of listarMaterias()) { await db.sincronizar(detalheMateria(m.slug)); n++; }
+    console.log(`Banco Postgres conectado. ${n} matéria(s) sincronizada(s).`);
+  } else {
+    console.log('DATABASE_URL não definida: os dados ficam só nos arquivos em data/.');
+  }
+}
+// Inicializa uma vez (na Vercel, a cada instância nova da função). Tenta de novo se falhar.
+function garantirPronto() {
+  if (!prontoBanco) prontoBanco = iniciarBanco().catch((e) => { prontoBanco = null; throw e; });
+  return prontoBanco;
+}
+
+async function handler(req, res) {
   try {
+    await garantirPronto();
     const url = new URL(req.url, 'http://localhost');
     const p = decodeURIComponent(url.pathname);
     if (p.startsWith('/api/')) return await api(req, res, p);
@@ -422,24 +441,19 @@ const server = http.createServer(async (req, res) => {
     if (!e.status) console.error(e);
     enviarJSON(res, e.status || 500, { erro: e.status ? e.message : 'Erro interno do servidor' });
   }
-});
+}
 
-async function iniciarServidor() {
-  if (DATABASE_URL) {
-    await db.iniciar(DATABASE_URL, { ssl: process.env.DATABASE_SSL === 'true' });
-    let n = 0;
-    for (const m of listarMaterias()) { await db.sincronizar(detalheMateria(m.slug)); n++; }
-    console.log(`Banco Postgres conectado. ${n} matéria(s) sincronizada(s).`);
-  } else {
-    console.log('DATABASE_URL não definida: os dados ficam só nos arquivos em data/.');
-  }
-  server.listen(PORT, () => {
+// Vercel importa este módulo e chama `handler`. Localmente, `node server.js` sobe o servidor.
+module.exports = handler;
+
+if (require.main === module) {
+  http.createServer(handler).listen(PORT, () => {
     console.log(`Painel de Estudos em http://localhost:${PORT}`);
     console.log(`Dados em: ${DATA_DIR}`);
     if (!API_KEY) console.log('Aviso: ANTHROPIC_API_KEY não definida — o Claude (mapas, perguntas, dúvidas, leitura de prova) ficará indisponível.');
   });
+  garantirPronto().catch((e) => {
+    console.error('Não foi possível iniciar:', e.message);
+    process.exit(1);
+  });
 }
-iniciarServidor().catch((e) => {
-  console.error('Não foi possível iniciar:', e.message);
-  process.exit(1);
-});
