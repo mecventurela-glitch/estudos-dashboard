@@ -1,0 +1,9 @@
+{
+  "name": "painel-de-estudos",
+  "version": "1.0.0",
+  "description": "Painel de estudos com resumos, provas escaneadas, mapas mentais, perguntas e dúvidas por voz com o Claude",
+  "main": "server.js",
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": ">=18" },
+  "license": "MIT"
+}
