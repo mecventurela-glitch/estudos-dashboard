@@ -53,14 +53,26 @@ Variáveis opcionais:
 | `DATA_DIR` | `./data` | Onde ficam as pastas das matérias |
 | `DATABASE_URL` | (vazio) | Conexão Postgres. Quando definida, cada gravação é copiada para o banco |
 | `DATABASE_SSL` | (vazio) | Use `true` se o banco exigir SSL (como o Supabase) |
-| `APP_SENHA` | (vazio) | Senha para acessar o painel (login do navegador). Obrigatória na Vercel |
+| `SESSION_SECRET` | (aleatório) | Segredo que assina os cookies de sessão. Obrigatória na Vercel |
+
+## Contas de acesso
+
+O painel pede email e senha. Não há cadastro público: as contas são criadas pelo terminal.
+
+```bash
+node criar-usuario.js seu@email.com "sua senha com 8+ caracteres"
+```
+
+- Para criar a conta no banco de produção, rode o comando com `DATABASE_URL` (e `DATABASE_SSL`) definidas. Sem `DATABASE_URL`, a conta vai para `data/usuarios.json`.
+- Senhas são guardadas com scrypt. Depois de 5 erros seguidos para um email, o login fica bloqueado por 15 minutos.
+- Sessão dura 30 dias. Não há "esqueci minha senha": quem perder a senha recria a conta com outro email, ou atualiza `senhaHash` no banco.
 
 ## Observações
 
 - **Câmera e microfone** exigem `localhost` ou HTTPS. Para usar pelo celular na mesma rede,
   sirva por HTTPS (por exemplo, com um túnel) ou use "Enviar fotos" e o ditado no Chrome.
 - **Voz** funciona no Chrome e no Edge (reconhecimento de voz do navegador).
-- O servidor não tem login: rode-o só na sua máquina ou em rede confiável.
+- Todas as rotas de dados exigem login. Mesmo assim, prefira rodar na sua máquina ou em rede confiável.
 - **Banco:** com `DATABASE_URL`, o Postgres é a fonte definitiva. Cada gravação é copiada para o banco (inclusive as fotos das provas, na tabela `paginas`), e antes de cada requisição os arquivos são reconstruídos a partir dele. Assim o app também funciona na Vercel, onde o disco é temporário. Se a gravação no banco falhar, a tela mostra o erro.
-- **Vercel:** conecte o repositório, e nas variáveis do projeto defina `APP_SENHA`, `DATABASE_URL`, `DATABASE_SSL` (se necessário) e `ANTHROPIC_API_KEY`. Sem `APP_SENHA`, o app responde 503.
+- **Vercel:** conecte o repositório, e nas variáveis do projeto defina `SESSION_SECRET`, `DATABASE_URL`, `DATABASE_SSL` (se necessário) e `ANTHROPIC_API_KEY`. Sem `SESSION_SECRET`, o app responde 503. Depois do deploy, crie a conta com `DATABASE_URL` de produção apontando para o banco.
 - Para fazer backup, copie a pasta `data/`.

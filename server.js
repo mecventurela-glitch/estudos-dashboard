@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const db = require('./db');
+const usuarios = require('./usuarios');
 
 const PUBLIC_DIR = path.join(__dirname, 'public');
 // Na Vercel o disco do projeto é somente leitura: usa /tmp (temporário) e o Postgres guarda o definitivo.
@@ -13,7 +14,7 @@ const MATERIAS_DIR = path.join(DATA_DIR, 'materias');
 const PORT = Number(process.env.PORT) || 3000;
 const API_KEY = process.env.ANTHROPIC_API_KEY || '';
 const DATABASE_URL = process.env.DATABASE_URL || '';
-const APP_SENHA = process.env.APP_SENHA || '';
+const NOME_COOKIE = 'sessao';
 const MODEL = process.env.CLAUDE_MODEL || 'claude-haiku-5-5';
 const MAX_BODY = 30 * 1024 * 1024;
 
@@ -33,6 +34,7 @@ const MIME = {
 const SISTEMA_BASE = 'Você é um professor particular para alunos de uma escola adventista brasileira, do 8º ano ao 3º ano do Ensino Médio. Responda sempre em português do Brasil, de forma clara e didática, fiel ao conteúdo fornecido. Quando o tema tocar em religião, respeite a visão cristã adventista.';
 
 try { fs.mkdirSync(MATERIAS_DIR, { recursive: true }); } catch (e) { console.error('Não consegui criar a pasta de dados:', e.message); }
+usuarios.configurar({ arquivo: path.join(DATA_DIR, 'usuarios.json') });
 
 class HttpError extends Error {
   constructor(status, message) { super(message); this.status = status; }
@@ -422,7 +424,9 @@ async function iniciarBanco() {
   } else {
     console.log('DATABASE_URL não definida: os dados ficam só nos arquivos em data/.');
   }
-  if (!APP_SENHA) console.log('Aviso: APP_SENHA não definida — o painel está sem senha.');
+  if (await usuarios.contar() === 0) {
+    console.log('Aviso: nenhuma conta cadastrada. Crie uma com: node criar-usuario.js seu@email.com "sua senha"');
+  }
 }
 // Inicializa uma vez (na Vercel, a cada instância nova da função). Tenta de novo se falhar.
 function garantirPronto() {
@@ -430,27 +434,76 @@ function garantirPronto() {
   return prontoBanco;
 }
 
-// Senha única (Basic Auth). Na Vercel, sem APP_SENHA o app não responde, para não ficar aberto na internet.
-function autorizado(req) {
-  const h = req.headers.authorization || '';
-  if (!h.startsWith('Basic ')) return false;
-  const senha = Buffer.from(h.slice(6), 'base64').toString('utf8').split(':').slice(1).join(':');
-  const a = crypto.createHash('sha256').update(senha).digest();
-  const b = crypto.createHash('sha256').update(APP_SENHA).digest();
-  return crypto.timingSafeEqual(a, b);
+// ---------- acesso por email e senha ----------
+const ROTAS_PUBLICAS = ['/api/login', '/api/logout', '/api/eu'];
+const TENTATIVAS = new Map(); // email -> { falhas, bloqueadoAte }
+const MAX_FALHAS = 5;
+const BLOQUEIO_MS = 15 * 60 * 1000;
+
+function cookieSessao(req) {
+  const cookies = String(req.headers.cookie || '').split(';').map((c) => c.trim());
+  const achado = cookies.find((c) => c.startsWith(NOME_COOKIE + '='));
+  return achado ? achado.slice(NOME_COOKIE.length + 1) : '';
+}
+function emailLogado(req) {
+  return usuarios.emailDaSessao(cookieSessao(req));
+}
+function definirCookie(req, valor, maxAge) {
+  const seguro = process.env.VERCEL ? '; Secure' : '';
+  return `${NOME_COOKIE}=${valor}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${seguro}`;
+}
+
+async function fazerLogin(req, res) {
+  const corpo = await lerCorpo(req);
+  const email = usuarios.normalizarEmail(corpo.email) || String(corpo.email || '').trim().toLowerCase();
+  const agora = Date.now();
+  const tentativa = TENTATIVAS.get(email) || { falhas: 0, bloqueadoAte: 0 };
+  if (tentativa.bloqueadoAte > agora) {
+    throw new HttpError(429, 'Muitas tentativas. Espere alguns minutos e tente de novo.');
+  }
+  const ok = await usuarios.verificar(email, corpo.senha);
+  if (!ok) {
+    tentativa.falhas += 1;
+    if (tentativa.falhas >= MAX_FALHAS) { tentativa.bloqueadoAte = agora + BLOQUEIO_MS; tentativa.falhas = 0; }
+    TENTATIVAS.set(email, tentativa);
+    throw new HttpError(401, 'Email ou senha incorretos');
+  }
+  TENTATIVAS.delete(email);
+  const sessao = usuarios.criarSessao(ok);
+  res.setHeader('set-cookie', definirCookie(req, sessao, Math.floor(usuarios.DURACAO_MS / 1000)));
+  enviarJSON(res, 200, { ok: true, email: ok });
+}
+
+// Rotas de conta são tratadas antes da API comum. Devolve true se atendeu a requisição.
+async function rotasDeConta(req, res, p) {
+  if (p === '/api/login' && req.method === 'POST') { await fazerLogin(req, res); return true; }
+  if (p === '/api/logout' && req.method === 'POST') {
+    res.setHeader('set-cookie', definirCookie(req, '', 0));
+    enviarJSON(res, 200, { ok: true });
+    return true;
+  }
+  if (p === '/api/eu' && req.method === 'GET') {
+    const email = emailLogado(req);
+    if (!email) throw new HttpError(401, 'Entre com seu email e senha');
+    enviarJSON(res, 200, { email });
+    return true;
+  }
+  return false;
 }
 
 async function handler(req, res) {
   try {
-    if (!APP_SENHA) {
-      if (process.env.VERCEL) return enviar(res, 503, 'Defina APP_SENHA nas variáveis do projeto na Vercel.', 'text/plain; charset=utf-8');
-    } else if (!autorizado(req)) {
-      res.writeHead(401, { 'www-authenticate': 'Basic realm="Painel de Estudos"', 'content-type': 'text/plain; charset=utf-8' });
-      return res.end('Senha necessária');
+    if (process.env.VERCEL && !process.env.SESSION_SECRET) {
+      return enviar(res, 503, 'Defina SESSION_SECRET nas variáveis do projeto na Vercel.', 'text/plain; charset=utf-8');
     }
     await garantirPronto();
     const url = new URL(req.url, 'http://localhost');
     const p = decodeURIComponent(url.pathname);
+    if (p.startsWith('/api/') && await rotasDeConta(req, res, p)) return;
+    const protegida = p.startsWith('/api/') || p.startsWith('/arquivos/');
+    if (protegida && !ROTAS_PUBLICAS.includes(p) && !emailLogado(req)) {
+      throw new HttpError(401, 'Entre com seu email e senha');
+    }
     if (p.startsWith('/api/') || p.startsWith('/arquivos/')) {
       // Com banco, reconstrói os arquivos a partir do Postgres antes de responder.
       if (db.ativo()) await db.restaurar(MATERIAS_DIR);

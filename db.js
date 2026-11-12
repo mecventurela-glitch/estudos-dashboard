@@ -58,6 +58,11 @@ CREATE TABLE IF NOT EXISTS perguntas (
   erros        INTEGER NOT NULL DEFAULT 0,
   criado_em    TIMESTAMPTZ NOT NULL
 );
+CREATE TABLE IF NOT EXISTS usuarios (
+  email       TEXT PRIMARY KEY,
+  senha_hash  TEXT NOT NULL,
+  criado_em   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 CREATE TABLE IF NOT EXISTS duvidas (
   id            TEXT PRIMARY KEY,
   materia_slug  TEXT NOT NULL REFERENCES materias(slug) ON DELETE CASCADE,
@@ -223,4 +228,17 @@ async function fechar() {
   pool = null;
 }
 
-module.exports = { iniciar, sincronizar, restaurar, ativo, fechar };
+// Contas de usuário (só quando o banco está ativo)
+async function buscarUsuario(email) {
+  const { rows } = await pool.query('SELECT email, senha_hash FROM usuarios WHERE email = $1', [email]);
+  return rows[0] ? { email: rows[0].email, senhaHash: rows[0].senha_hash } : null;
+}
+async function criarUsuarioDB(email, senhaHash) {
+  await pool.query('INSERT INTO usuarios (email, senha_hash) VALUES ($1, $2)', [email, senhaHash]);
+}
+async function contarUsuarios() {
+  const { rows } = await pool.query('SELECT COUNT(*)::int AS n FROM usuarios');
+  return rows[0].n;
+}
+
+module.exports = { iniciar, sincronizar, restaurar, ativo, fechar, buscarUsuario, criarUsuarioDB, contarUsuarios };

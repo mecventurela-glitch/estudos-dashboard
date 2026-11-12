@@ -21,9 +21,48 @@ async function api(method, url, body) {
   if (body !== undefined) { opts.headers['content-type'] = 'application/json'; opts.body = JSON.stringify(body); }
   const r = await fetch('/api' + url, opts);
   const data = await r.json().catch(() => ({}));
+  if (r.status === 401 && !['/login', '/eu'].includes(url)) { mostrarLogin(); throw new Error('Sessão expirada. Entre de novo.'); }
   if (!r.ok) throw new Error(data.erro || `Erro ${r.status}`);
   return data;
 }
+
+// ---------- acesso (email + senha) ----------
+function mostrarLogin(erro = '') {
+  $('#sair').hidden = true;
+  app.innerHTML = `
+  <section class="card login">
+    <h2>Entrar</h2>
+    <form id="fLogin">
+      <label>Email <input type="email" name="email" autocomplete="username" required></label>
+      <label>Senha <input type="password" name="senha" autocomplete="current-password" required></label>
+      <button class="btn" type="submit" id="btnEntrar">Entrar</button>
+      <p class="erro" id="loginErro" ${erro ? '' : 'hidden'}>${esc(erro)}</p>
+    </form>
+  </section>`;
+  $('#fLogin').onsubmit = async (e) => {
+    e.preventDefault();
+    const f = new FormData(e.currentTarget);
+    const btn = $('#btnEntrar');
+    btn.disabled = true;
+    try {
+      await api('POST', '/login', { email: f.get('email'), senha: f.get('senha') });
+      location.hash = '#/';
+      await route();
+    } catch (err) {
+      btn.disabled = false;
+      $('#loginErro').textContent = err.message;
+      $('#loginErro').hidden = false;
+    }
+  };
+}
+async function sessaoAtiva() {
+  try { await api('GET', '/eu'); return true; } catch { return false; }
+}
+$('#sair').onclick = async () => {
+  await fetch('/api/logout', { method: 'POST' });
+  cache = null;
+  mostrarLogin();
+};
 function toast(msg, ms = 3500) {
   const t = $('#toast');
   t.textContent = msg; t.hidden = false;
@@ -83,6 +122,8 @@ window.addEventListener('hashchange', route);
 async function route() {
   fecharCamera();
   const [, root, slug, tab] = location.hash.replace(/^#/, '').split('/');
+  if (!(await sessaoAtiva())) return mostrarLogin();
+  $('#sair').hidden = false;
   try {
     if (!SERIES.length) SERIES = await api('GET', '/series');
     if (root === 'm' && slug) await viewMateria(slug, tab);
