@@ -1,11 +1,11 @@
 # Painel de Estudos
 
-Painel local para organizar os estudos do 8º ano ao 3º ano do Ensino Médio.
+Painel local para organizar os estudos do 7º ano ao 3º ano do Ensino Médio.
 Cada matéria vira uma pasta no disco, com arquivos legíveis fora do app.
 
 ## O que tem
 
-- **Cadastro de matérias** por série (8º ano, 9º ano, 1º, 2º e 3º EM), com sugestões prontas.
+- **Cadastro de matérias** por série (7º ano, 8º ano, 9º ano, 1º, 2º e 3º EM), com sugestões prontas.
 - **Resumo diário** por matéria. Cada dia vira um arquivo `resumos/AAAA-MM-DD.md`.
 - **Cai na prova**: marque quais resumos entram na prova.
 - **Prova & scanner**: crie a prova, escaneie páginas com a câmera ou envie fotos.

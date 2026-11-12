@@ -19,6 +19,7 @@ const MODEL = process.env.CLAUDE_MODEL || 'claude-haiku-5-5';
 const MAX_BODY = 30 * 1024 * 1024;
 
 const SERIES = [
+  { id: '7ano', label: '7º ano' },
   { id: '8ano', label: '8º ano' },
   { id: '9ano', label: '9º ano' },
   { id: '1em', label: '1º ano do Ensino Médio' },
@@ -31,7 +32,7 @@ const MIME = {
   '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8',
   '.jpg': 'image/jpeg', '.png': 'image/png', '.md': 'text/markdown; charset=utf-8',
 };
-const SISTEMA_BASE = 'Você é um professor particular para alunos de uma escola adventista brasileira, do 8º ano ao 3º ano do Ensino Médio. Responda sempre em português do Brasil, de forma clara e didática, fiel ao conteúdo fornecido. Quando o tema tocar em religião, respeite a visão cristã adventista.';
+const SISTEMA_BASE = 'Você é um professor particular para alunos de uma escola adventista brasileira, do 7º ano ao 3º ano do Ensino Médio. Responda sempre em português do Brasil, de forma clara e didática, fiel ao conteúdo fornecido. Quando o tema tocar em religião, respeite a visão cristã adventista.';
 
 try { fs.mkdirSync(MATERIAS_DIR, { recursive: true }); } catch (e) { console.error('Não consegui criar a pasta de dados:', e.message); }
 usuarios.configurar({ arquivo: path.join(DATA_DIR, 'usuarios.json') });
