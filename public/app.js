@@ -291,9 +291,11 @@ async function abrirCamera(provaId) {
     const v = $('#cam');
     if (!v.videoWidth) return toast('A câmera ainda está abrindo...');
     const cv = $('#camCanvas');
-    cv.width = v.videoWidth; cv.height = v.videoHeight;
-    cv.getContext('2d').drawImage(v, 0, 0);
-    const imagem = cv.toDataURL('image/jpeg', 0.9);
+    // Reduz para 2000 px: a Vercel limita o tamanho de cada requisição
+    const k = Math.min(1, 2000 / Math.max(v.videoWidth, v.videoHeight));
+    cv.width = Math.round(v.videoWidth * k); cv.height = Math.round(v.videoHeight * k);
+    cv.getContext('2d').drawImage(v, 0, 0, cv.width, cv.height);
+    const imagem = cv.toDataURL('image/jpeg', 0.88);
     const slug = cur.slug;
     e.currentTarget.disabled = true;
     try {

@@ -1,6 +1,9 @@
-// Espelho no Postgres. Os arquivos em data/materias/ continuam sendo a fonte principal;
-// a cada gravação a matéria inteira é copiada para o banco (upsert, sem apagar nada).
-// Ativo somente quando DATABASE_URL está definida.
+// Postgres como fonte definitiva. Ativo somente quando DATABASE_URL está definida.
+// - sincronizar(): copia uma matéria (textos e fotos das provas) para o banco após cada gravação.
+// - restaurar(): reconstrói os arquivos em disco a partir do banco antes de atender requisições.
+//   Assim o mesmo código de arquivos funciona na Vercel (disco temporário) e localmente.
+const fs = require('fs');
+const path = require('path');
 const { Pool } = require('pg');
 
 let pool = null;
@@ -29,6 +32,13 @@ CREATE TABLE IF NOT EXISTS provas (
   transcricao  TEXT NOT NULL DEFAULT '',
   criado_em    TIMESTAMPTZ,
   PRIMARY KEY (materia_slug, id)
+);
+CREATE TABLE IF NOT EXISTS paginas (
+  materia_slug TEXT NOT NULL REFERENCES materias(slug) ON DELETE CASCADE,
+  prova_id     TEXT NOT NULL,
+  nome         TEXT NOT NULL,
+  conteudo     BYTEA NOT NULL,
+  PRIMARY KEY (materia_slug, prova_id, nome)
 );
 CREATE TABLE IF NOT EXISTS mapas (
   id           TEXT PRIMARY KEY,
@@ -66,8 +76,8 @@ async function iniciar(url, { ssl } = {}) {
   await pool.query(SCHEMA);
 }
 
-// det = objeto retornado por detalheMateria(slug) em server.js
-async function sincronizar(det) {
+// det = detalheMateria(slug); matDir = pasta da matéria em disco
+async function sincronizar(det, matDir) {
   if (!pool) return;
   const { materia, resumos, provas, mapas, perguntas, duvidas } = det;
   const c = await pool.connect();
@@ -93,6 +103,19 @@ async function sincronizar(det) {
            paginas=EXCLUDED.paginas, transcricao=EXCLUDED.transcricao`,
         [materia.slug, p.id, p.nome, p.data, JSON.stringify(p.paginas), p.texto, p.criadoEm || null]
       );
+    }
+    // Fotos: envia só as que ainda não estão no banco
+    const { rows: jaTem } = await c.query('SELECT prova_id, nome FROM paginas WHERE materia_slug=$1', [materia.slug]);
+    const existentes = new Set(jaTem.map((r) => `${r.prova_id}/${r.nome}`));
+    for (const p of provas) {
+      for (const nome of p.paginas) {
+        if (existentes.has(`${p.id}/${nome}`)) continue;
+        const bytes = fs.readFileSync(path.join(matDir, 'provas', p.id, nome));
+        await c.query(
+          'INSERT INTO paginas (materia_slug, prova_id, nome, conteudo) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING',
+          [materia.slug, p.id, nome, bytes]
+        );
+      }
     }
     for (const m of mapas) {
       await c.query(
@@ -127,9 +150,77 @@ async function sincronizar(det) {
   }
 }
 
+// Reconstrói em disco (materiasDir/<slug>/...) o que está no banco. Textos são reescritos;
+// fotos só são baixadas quando o arquivo ainda não existe.
+async function restaurar(materiasDir) {
+  if (!pool) return;
+  const escreverJSON = (file, obj) => {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify(obj, null, 2));
+  };
+  const iso = (d) => (d ? new Date(d).toISOString() : null);
+
+  const { rows: mats } = await pool.query('SELECT slug, nome, serie, cor, criado_em FROM materias');
+  for (const m of mats) {
+    const base = path.join(materiasDir, m.slug);
+    for (const sub of ['resumos', 'provas', 'mapas', 'duvidas']) fs.mkdirSync(path.join(base, sub), { recursive: true });
+    escreverJSON(path.join(base, 'materia.json'), { nome: m.nome, serie: m.serie, cor: m.cor, criadoEm: iso(m.criado_em) });
+  }
+
+  const { rows: res } = await pool.query("SELECT materia_slug, to_char(data,'YYYY-MM-DD') AS data, texto, na_prova FROM resumos");
+  for (const r of res) {
+    const file = path.join(materiasDir, r.materia_slug, 'resumos', `${r.data}.md`);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, `---\ndata: ${r.data}\nna_prova: ${r.na_prova}\n---\n\n${r.texto}\n`);
+  }
+
+  const { rows: provas } = await pool.query(
+    "SELECT materia_slug, id, nome, to_char(data,'YYYY-MM-DD') AS data, paginas, transcricao, criado_em FROM provas"
+  );
+  for (const p of provas) {
+    const base = path.join(materiasDir, p.materia_slug, 'provas', p.id);
+    escreverJSON(path.join(base, 'prova.json'), { nome: p.nome, data: p.data, criadoEm: iso(p.criado_em) });
+    if (p.transcricao) fs.writeFileSync(path.join(base, 'texto.md'), p.transcricao);
+    for (const nome of p.paginas) {
+      const file = path.join(base, nome);
+      if (fs.existsSync(file)) continue;
+      const { rows } = await pool.query(
+        'SELECT conteudo FROM paginas WHERE materia_slug=$1 AND prova_id=$2 AND nome=$3',
+        [p.materia_slug, p.id, nome]
+      );
+      if (rows[0]) { fs.mkdirSync(base, { recursive: true }); fs.writeFileSync(file, rows[0].conteudo); }
+    }
+  }
+
+  const { rows: mapas } = await pool.query('SELECT id, materia_slug, titulo, fonte, arvore, criado_em FROM mapas');
+  for (const m of mapas) {
+    escreverJSON(path.join(materiasDir, m.materia_slug, 'mapas', `${m.id}.json`),
+      { id: m.id, titulo: m.titulo, fonte: m.fonte, criadoEm: iso(m.criado_em), arvore: m.arvore });
+  }
+
+  const { rows: perg } = await pool.query('SELECT * FROM perguntas ORDER BY criado_em');
+  const porMateria = {};
+  for (const q of perg) {
+    (porMateria[q.materia_slug] ||= []).push({
+      id: q.id, pergunta: q.pergunta, resposta: q.resposta, fonte: q.fonte,
+      acertos: q.acertos, erros: q.erros, criadoEm: iso(q.criado_em),
+    });
+  }
+  for (const [slug, lista] of Object.entries(porMateria)) {
+    escreverJSON(path.join(materiasDir, slug, 'perguntas.json'), lista);
+  }
+
+  const { rows: duv } = await pool.query('SELECT * FROM duvidas');
+  for (const d of duv) {
+    escreverJSON(path.join(materiasDir, d.materia_slug, 'duvidas', `${d.id}.json`),
+      { id: d.id, pergunta: d.pergunta, resposta: d.resposta, buscaYoutube: d.busca_youtube,
+        videoUrl: d.video_url, criadoEm: iso(d.criado_em) });
+  }
+}
+
 async function fechar() {
   if (pool) await pool.end();
   pool = null;
 }
 
-module.exports = { iniciar, sincronizar, ativo, fechar };
+module.exports = { iniciar, sincronizar, restaurar, ativo, fechar };

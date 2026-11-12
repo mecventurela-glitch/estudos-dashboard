@@ -53,6 +53,7 @@ Variáveis opcionais:
 | `DATA_DIR` | `./data` | Onde ficam as pastas das matérias |
 | `DATABASE_URL` | (vazio) | Conexão Postgres. Quando definida, cada gravação é copiada para o banco |
 | `DATABASE_SSL` | (vazio) | Use `true` se o banco exigir SSL (como o Supabase) |
+| `APP_SENHA` | (vazio) | Senha para acessar o painel (login do navegador). Obrigatória na Vercel |
 
 ## Observações
 
@@ -60,5 +61,6 @@ Variáveis opcionais:
   sirva por HTTPS (por exemplo, com um túnel) ou use "Enviar fotos" e o ditado no Chrome.
 - **Voz** funciona no Chrome e no Edge (reconhecimento de voz do navegador).
 - O servidor não tem login: rode-o só na sua máquina ou em rede confiável.
-- **Banco:** os arquivos em `data/` são a cópia principal. Com `DATABASE_URL`, cada gravação também vai para o Postgres (tabelas `materias`, `resumos`, `provas`, `mapas`, `perguntas`, `duvidas`). Ao iniciar, todas as matérias são sincronizadas. Se a gravação no banco falhar, a tela mostra o erro.
+- **Banco:** com `DATABASE_URL`, o Postgres é a fonte definitiva. Cada gravação é copiada para o banco (inclusive as fotos das provas, na tabela `paginas`), e antes de cada requisição os arquivos são reconstruídos a partir dele. Assim o app também funciona na Vercel, onde o disco é temporário. Se a gravação no banco falhar, a tela mostra o erro.
+- **Vercel:** conecte o repositório, e nas variáveis do projeto defina `APP_SENHA`, `DATABASE_URL`, `DATABASE_SSL` (se necessário) e `ANTHROPIC_API_KEY`. Sem `APP_SENHA`, o app responde 503.
 - Para fazer backup, copie a pasta `data/`.

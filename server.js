@@ -13,6 +13,7 @@ const MATERIAS_DIR = path.join(DATA_DIR, 'materias');
 const PORT = Number(process.env.PORT) || 3000;
 const API_KEY = process.env.ANTHROPIC_API_KEY || '';
 const DATABASE_URL = process.env.DATABASE_URL || '';
+const APP_SENHA = process.env.APP_SENHA || '';
 const MODEL = process.env.CLAUDE_MODEL || 'claude-haiku-5-5';
 const MAX_BODY = 30 * 1024 * 1024;
 
@@ -390,7 +391,7 @@ async function api(req, res, p) {
       // A gravação em arquivo já foi feita; agora copia a matéria para o Postgres.
       const slug = p.match(/^\/api\/materias\/([^/]+)/)?.[1] || resultado?.slug;
       if (slug) {
-        try { await db.sincronizar(detalheMateria(slug)); }
+        try { await db.sincronizar(detalheMateria(slug), path.join(MATERIAS_DIR, slug)); }
         catch (e) {
           console.error('Falha ao gravar no banco:', e.message);
           throw new HttpError(500, 'Salvo no arquivo, mas falhou ao gravar no banco: ' + e.message);
@@ -416,11 +417,12 @@ async function iniciarBanco() {
   if (DATABASE_URL) {
     await db.iniciar(DATABASE_URL, { ssl: process.env.DATABASE_SSL === 'true' });
     let n = 0;
-    for (const m of listarMaterias()) { await db.sincronizar(detalheMateria(m.slug)); n++; }
+    for (const m of listarMaterias()) { await db.sincronizar(detalheMateria(m.slug), path.join(MATERIAS_DIR, m.slug)); n++; }
     console.log(`Banco Postgres conectado. ${n} matéria(s) sincronizada(s).`);
   } else {
     console.log('DATABASE_URL não definida: os dados ficam só nos arquivos em data/.');
   }
+  if (!APP_SENHA) console.log('Aviso: APP_SENHA não definida — o painel está sem senha.');
 }
 // Inicializa uma vez (na Vercel, a cada instância nova da função). Tenta de novo se falhar.
 function garantirPronto() {
@@ -428,11 +430,31 @@ function garantirPronto() {
   return prontoBanco;
 }
 
+// Senha única (Basic Auth). Na Vercel, sem APP_SENHA o app não responde, para não ficar aberto na internet.
+function autorizado(req) {
+  const h = req.headers.authorization || '';
+  if (!h.startsWith('Basic ')) return false;
+  const senha = Buffer.from(h.slice(6), 'base64').toString('utf8').split(':').slice(1).join(':');
+  const a = crypto.createHash('sha256').update(senha).digest();
+  const b = crypto.createHash('sha256').update(APP_SENHA).digest();
+  return crypto.timingSafeEqual(a, b);
+}
+
 async function handler(req, res) {
   try {
+    if (!APP_SENHA) {
+      if (process.env.VERCEL) return enviar(res, 503, 'Defina APP_SENHA nas variáveis do projeto na Vercel.', 'text/plain; charset=utf-8');
+    } else if (!autorizado(req)) {
+      res.writeHead(401, { 'www-authenticate': 'Basic realm="Painel de Estudos"', 'content-type': 'text/plain; charset=utf-8' });
+      return res.end('Senha necessária');
+    }
     await garantirPronto();
     const url = new URL(req.url, 'http://localhost');
     const p = decodeURIComponent(url.pathname);
+    if (p.startsWith('/api/') || p.startsWith('/arquivos/')) {
+      // Com banco, reconstrói os arquivos a partir do Postgres antes de responder.
+      if (db.ativo()) await db.restaurar(MATERIAS_DIR);
+    }
     if (p.startsWith('/api/')) return await api(req, res, p);
     if (p.startsWith('/arquivos/')) return servirArquivo(res, path.join(MATERIAS_DIR, p.slice('/arquivos/'.length)), MATERIAS_DIR);
     const rel = p === '/' ? '/index.html' : p;
