@@ -58,17 +58,21 @@ function viewAcesso() {
   };
 }
 
-function mostrarLogin(erro = '') {
+async function mostrarLogin() {
   $('#sair').hidden = true;
   $('#acessoBtn').hidden = true;
+  // Sem nenhuma conta cadastrada, a primeira conta é criada aqui mesmo (uma única vez).
+  let primeira = false;
+  try { primeira = (await (await fetch('/api/setup')).json()).precisaPrimeiraConta === true; } catch { /* segue como login */ }
   app.innerHTML = `
   <section class="card login">
-    <h2>Entrar</h2>
+    <h2>${primeira ? 'Criar primeira conta' : 'Entrar'}</h2>
+    ${primeira ? '<p class="muted">Ainda não existe nenhuma conta. Depois desta, novas contas são criadas pelo painel, em "Criar acesso".</p>' : ''}
     <form id="fLogin">
       <label>Email <input type="email" name="email" autocomplete="username" required></label>
-      <label>Senha <input type="password" name="senha" autocomplete="current-password" required></label>
-      <button class="btn" type="submit" id="btnEntrar">Entrar</button>
-      <p class="erro" id="loginErro" ${erro ? '' : 'hidden'}>${esc(erro)}</p>
+      <label>Senha${primeira ? ' (mínimo 8 caracteres)' : ''} <input type="password" name="senha" autocomplete="${primeira ? 'new-password' : 'current-password'}" ${primeira ? 'minlength="8"' : ''} required></label>
+      <button class="btn" type="submit" id="btnEntrar">${primeira ? 'Criar conta e entrar' : 'Entrar'}</button>
+      <p class="erro" id="loginErro" hidden></p>
     </form>
   </section>`;
   $('#fLogin').onsubmit = async (e) => {
@@ -77,7 +81,7 @@ function mostrarLogin(erro = '') {
     const btn = $('#btnEntrar');
     btn.disabled = true;
     try {
-      await api('POST', '/login', { email: f.get('email'), senha: f.get('senha') });
+      await api('POST', primeira ? '/primeira-conta' : '/login', { email: f.get('email'), senha: f.get('senha') });
       location.hash = '#/';
       await route();
     } catch (err) {

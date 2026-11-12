@@ -482,6 +482,23 @@ async function rotasDeConta(req, res, p) {
     enviarJSON(res, 200, { ok: true });
     return true;
   }
+  // Primeira conta: só funciona enquanto não existe nenhuma conta
+  if (p === '/api/setup' && req.method === 'GET') {
+    enviarJSON(res, 200, { precisaPrimeiraConta: (await usuarios.contar()) === 0 });
+    return true;
+  }
+  if (p === '/api/primeira-conta' && req.method === 'POST') {
+    if ((await usuarios.contar()) > 0) {
+      throw new HttpError(403, 'Já existe uma conta. Peça para alguém logado criar a sua em "Criar acesso".');
+    }
+    const corpo = await lerCorpo(req);
+    let email;
+    try { email = await usuarios.criar(corpo.email, corpo.senha); }
+    catch (e) { throw new HttpError(400, e.message); }
+    res.setHeader('set-cookie', definirCookie(req, usuarios.criarSessao(email), Math.floor(usuarios.DURACAO_MS / 1000)));
+    enviarJSON(res, 201, { ok: true, email });
+    return true;
+  }
   // Criar acesso para outra pessoa: só quem já entrou pode fazer isso
   if (p === '/api/usuarios' && req.method === 'POST') {
     if (!emailLogado(req)) throw new HttpError(401, 'Entre com seu email e senha');
