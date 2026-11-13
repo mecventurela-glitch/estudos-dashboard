@@ -14,8 +14,9 @@ async function main() {
     process.exit(1);
   }
   usuarios.configurar({ arquivo: path.join(DATA_DIR, 'usuarios.json') });
-  if (process.env.DATABASE_URL) {
-    await db.iniciar(process.env.DATABASE_URL, { ssl: process.env.DATABASE_SSL === 'true' });
+  const url = process.env.DATABASE_URL || process.env.POSTGRES_URL;
+  if (url) {
+    await db.iniciar(url, { ssl: process.env.DATABASE_SSL === 'true' });
   }
   const criado = await usuarios.criar(email, senha);
   console.log(`Conta criada: ${criado}`);

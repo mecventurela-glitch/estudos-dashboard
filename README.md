@@ -51,7 +51,7 @@ Variáveis opcionais:
 | `CLAUDE_MODEL` | `claude-haiku-5-5` | Modelo usado. Para respostas mais elaboradas, use `claude-sonnet-5-5` |
 | `PORT` | `3000` | Porta do servidor |
 | `DATA_DIR` | `./data` | Onde ficam as pastas das matérias |
-| `DATABASE_URL` | (vazio) | Conexão Postgres. Quando definida, cada gravação é copiada para o banco |
+| `DATABASE_URL` | (vazio) | Conexão Postgres (também aceita `POSTGRES_URL`). Quando definida, cada gravação é copiada para o banco. Obrigatória na Vercel: sem ela o app responde 503, porque o disco de lá é temporário e nada ficaria salvo |
 | `DATABASE_SSL` | (vazio) | Use `true` se o banco exigir SSL (como o Supabase) |
 | `SESSION_SECRET` | (aleatório) | Segredo que assina os cookies de sessão. Obrigatória na Vercel |
 

@@ -13,7 +13,8 @@ const DATA_DIR = process.env.DATA_DIR || (process.env.VERCEL ? '/tmp/estudos-dat
 const MATERIAS_DIR = path.join(DATA_DIR, 'materias');
 const PORT = Number(process.env.PORT) || 3000;
 const API_KEY = process.env.ANTHROPIC_API_KEY || '';
-const DATABASE_URL = process.env.DATABASE_URL || '';
+// POSTGRES_URL é o nome usado por algumas integrações de banco da Vercel (ex.: Supabase).
+const DATABASE_URL = process.env.DATABASE_URL || process.env.POSTGRES_URL || '';
 const NOME_COOKIE = 'sessao';
 const MODEL = process.env.CLAUDE_MODEL || 'claude-haiku-5-5';
 const MAX_BODY = 30 * 1024 * 1024;
@@ -523,6 +524,11 @@ async function handler(req, res) {
   try {
     if (process.env.VERCEL && !process.env.SESSION_SECRET) {
       return enviar(res, 503, 'Defina SESSION_SECRET nas variáveis do projeto na Vercel.', 'text/plain; charset=utf-8');
+    }
+    // Na Vercel o disco é temporário: sem banco, contas, matérias e fotos somem em minutos.
+    // Melhor recusar do que deixar a pessoa digitar tudo e perder.
+    if (process.env.VERCEL && !DATABASE_URL) {
+      return enviar(res, 503, 'Banco de dados não configurado: nada seria salvo. Na Vercel, abra Storage, crie um banco Postgres (Neon), conecte-o a este projeto e faça Redeploy.', 'text/plain; charset=utf-8');
     }
     await garantirPronto();
     const url = new URL(req.url, 'http://localhost');
