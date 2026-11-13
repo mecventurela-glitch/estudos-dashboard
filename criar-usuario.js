@@ -14,7 +14,7 @@ async function main() {
     process.exit(1);
   }
   usuarios.configurar({ arquivo: path.join(DATA_DIR, 'usuarios.json') });
-  const url = process.env.DATABASE_URL || process.env.POSTGRES_URL;
+  const url = db.urlDoAmbiente();
   if (url) {
     await db.iniciar(url, { ssl: process.env.DATABASE_SSL === 'true' });
   }

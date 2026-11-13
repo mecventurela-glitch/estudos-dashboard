@@ -76,6 +76,17 @@ CREATE TABLE IF NOT EXISTS duvidas (
 
 const ativo = () => pool !== null;
 
+// Acha a conexão do banco nas variáveis de ambiente. Integrações da Vercel (Neon, Supabase)
+// criam DATABASE_URL ou POSTGRES_URL, às vezes com um prefixo escolhido na hora (ex.: STORAGE_DATABASE_URL).
+function urlDoAmbiente(env = process.env) {
+  if (env.DATABASE_URL) return env.DATABASE_URL;
+  if (env.POSTGRES_URL) return env.POSTGRES_URL;
+  const nome = Object.keys(env)
+    .filter((k) => /_(DATABASE_URL|POSTGRES_URL)$/.test(k) && /^postgres(ql)?:\/\//.test(env[k] || ''))
+    .sort()[0];
+  return nome ? env[nome] : '';
+}
+
 async function iniciar(url, { ssl } = {}) {
   pool = new Pool({ connectionString: url, max: 5, ssl: ssl ? { rejectUnauthorized: false } : undefined });
   await pool.query(SCHEMA);
@@ -241,4 +252,4 @@ async function contarUsuarios() {
   return rows[0].n;
 }
 
-module.exports = { iniciar, sincronizar, restaurar, ativo, fechar, buscarUsuario, criarUsuarioDB, contarUsuarios };
+module.exports = { urlDoAmbiente, iniciar, sincronizar, restaurar, ativo, fechar, buscarUsuario, criarUsuarioDB, contarUsuarios };

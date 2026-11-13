@@ -13,8 +13,7 @@ const DATA_DIR = process.env.DATA_DIR || (process.env.VERCEL ? '/tmp/estudos-dat
 const MATERIAS_DIR = path.join(DATA_DIR, 'materias');
 const PORT = Number(process.env.PORT) || 3000;
 const API_KEY = process.env.ANTHROPIC_API_KEY || '';
-// POSTGRES_URL é o nome usado por algumas integrações de banco da Vercel (ex.: Supabase).
-const DATABASE_URL = process.env.DATABASE_URL || process.env.POSTGRES_URL || '';
+const DATABASE_URL = db.urlDoAmbiente();
 const NOME_COOKIE = 'sessao';
 const MODEL = process.env.CLAUDE_MODEL || 'claude-haiku-5-5';
 const MAX_BODY = 30 * 1024 * 1024;
