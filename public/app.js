@@ -125,24 +125,53 @@ const lerArquivo = (file) => new Promise((resolve, reject) => {
   img.onerror = () => reject(new Error('Não consegui abrir ' + file.name));
   img.src = URL.createObjectURL(file);
 });
+// Ditado por voz: usa o reconhecimento de fala do próprio navegador (não grava áudio).
+const MSG_MIC = {
+  'not-allowed': 'O navegador bloqueou o microfone. Clique no cadeado ao lado do endereço do site, permita o Microfone e recarregue a página.',
+  'service-not-allowed': 'O ditado está desligado neste aparelho. No iPhone ou Mac, ative "Siri e Ditado" nos Ajustes, ou abra o site no Google Chrome.',
+  'audio-capture': 'Não encontrei nenhum microfone. Confira se há um microfone ligado e escolhido nas configurações de som.',
+  'network': 'O ditado por voz precisa de internet e não respondeu neste navegador. Abra o site no Google Chrome.',
+  'language-not-supported': 'Este navegador não reconhece português. Abra o site no Google Chrome.',
+};
 function ditar(btn, alvo) {
-  if (reconhecimento) return reconhecimento.stop();
+  if (reconhecimento) return reconhecimento.parar();
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SR) return toast('Reconhecimento de voz indisponível. Use Chrome ou Edge.');
-  const rec = new SR();
-  rec.lang = 'pt-BR'; rec.interimResults = true; rec.continuous = true;
+  if (!SR) return toast('🎤 Este navegador não tem ditado por voz. Abra o site no Google Chrome (computador ou Android) ou no Safari (iPhone).', 10000);
   const rotulo = btn.textContent;
-  const base = alvo.value ? alvo.value.trimEnd() + ' ' : '';
-  rec.onresult = (e) => {
-    let t = '';
-    for (let i = 0; i < e.results.length; i++) t += e.results[i][0].transcript;
-    alvo.value = base + t;
+  // No Android o modo contínuo repete palavras; lá cada frase é uma sessão e o ditado recomeça sozinho.
+  const continuo = !/Android/i.test(navigator.userAgent);
+  let ligado = true, rec = null, inicio = 0, curtas = 0;
+  const encerrar = () => { reconhecimento = null; btn.classList.remove('gravando'); btn.textContent = rotulo; };
+  const iniciar = () => {
+    const base = alvo.value ? alvo.value.trimEnd() + ' ' : '';
+    rec = new SR();
+    rec.lang = 'pt-BR'; rec.interimResults = true; rec.continuous = continuo;
+    rec.onresult = (e) => {
+      let t = '';
+      for (let i = 0; i < e.results.length; i++) t += e.results[i][0].transcript;
+      alvo.value = base + t;
+    };
+    rec.onerror = (e) => {
+      if (e.error === 'no-speech') return; // silêncio: o ditado recomeça sozinho
+      ligado = false;
+      if (e.error !== 'aborted') toast('🎤 ' + (MSG_MIC[e.error] || `O microfone falhou (${e.error}). Tente no Google Chrome.`), 10000);
+    };
+    rec.onend = () => {
+      // O navegador encerra a sessão sozinho após uma pausa; enquanto a pessoa não clicar em Parar, recomeça.
+      curtas = Date.now() - inicio < 1000 ? curtas + 1 : 0;
+      if (ligado && curtas < 3 && document.body.contains(alvo)) {
+        try { iniciar(); return; } catch { /* encerra abaixo */ }
+      }
+      if (ligado && curtas >= 3) toast('🎤 O ditado não conseguiu começar neste navegador. Tente no Google Chrome.', 10000);
+      encerrar();
+    };
+    inicio = Date.now();
+    rec.start();
   };
-  rec.onstart = () => { btn.classList.add('gravando'); btn.textContent = '⏹ Parar'; };
-  rec.onend = () => { reconhecimento = null; btn.classList.remove('gravando'); btn.textContent = rotulo; };
-  rec.onerror = (e) => toast('Microfone: ' + e.error);
-  reconhecimento = rec;
-  rec.start();
+  reconhecimento = { parar: () => { ligado = false; try { rec.stop(); } catch { encerrar(); } } };
+  btn.classList.add('gravando'); btn.textContent = '⏹ Parar';
+  try { iniciar(); }
+  catch (e) { ligado = false; encerrar(); toast('🎤 Não consegui ligar o microfone: ' + e.message, 10000); }
 }
 function falar(texto) {
   if (!('speechSynthesis' in window)) return toast('Seu navegador não lê em voz alta.');

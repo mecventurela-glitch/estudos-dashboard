@@ -71,7 +71,7 @@ node criar-usuario.js seu@email.com "sua senha com 8+ caracteres"
 
 - **Câmera e microfone** exigem `localhost` ou HTTPS. Para usar pelo celular na mesma rede,
   sirva por HTTPS (por exemplo, com um túnel) ou use "Enviar fotos" e o ditado no Chrome.
-- **Voz** funciona no Chrome e no Edge (reconhecimento de voz do navegador).
+- **Voz** usa o reconhecimento de fala do navegador: funciona no Chrome e no Edge (computador e Android) e no Safari com "Siri e Ditado" ativado. Não funciona no Firefox. O app guarda o texto ditado, não o áudio. Se o microfone falhar, o painel explica o motivo (permissão bloqueada, sem microfone, navegador sem suporte).
 - Todas as rotas de dados exigem login. Mesmo assim, prefira rodar na sua máquina ou em rede confiável.
 - **Banco:** com `DATABASE_URL`, o Postgres é a fonte definitiva. Cada gravação é copiada para o banco (inclusive as fotos das provas, na tabela `paginas`), e antes de cada requisição os arquivos são reconstruídos a partir dele. Assim o app também funciona na Vercel, onde o disco é temporário. Se a gravação no banco falhar, a tela mostra o erro.
 - **Vercel:** conecte o repositório, e nas variáveis do projeto defina `SESSION_SECRET`, `DATABASE_URL`, `DATABASE_SSL` (se necessário) e `ANTHROPIC_API_KEY`. Sem `SESSION_SECRET`, o app responde 503. Depois do deploy, crie a conta com `DATABASE_URL` de produção apontando para o banco.
